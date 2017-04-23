@@ -1,0 +1,147 @@
+---
+title: "Intro to R"
+output: html_notebook
+---
+
+This document is a product of the livecode that I did during this [tech talk](https://www.youtube.com/watch?v=L2rCJFX_QA8).  Checkout the talk for more details and explanation.
+
+It's good to start by loading any libraries (packages) you know you will be using.
+
+```{r}
+
+library(ggplot2)
+library(plyr)
+library(scales)
+library(gridExtra)
+
+```
+
+
+Next, we need some data!
+```{r}
+
+complaints = read.csv("housing_complaints.csv")
+str(complaints)
+
+```
+
+This provides a nice summary of our data.
+```{r}
+
+summary(complaints)
+
+```
+
+Here comes our first ggplot!
+```{r}
+
+ggplot(complaints, aes(x=Borough, fill=Status)) +
+  geom_bar()
+
+```
+
+R also makes data transformation easy: here the ReceivedDate and StatusDate columns are turned into 'Date' types rather than factors, and a new column is created by substracting those two.
+```{r}
+
+complaints$ReceivedDate <- as.Date(complaints$ReceivedDate, format = "%m/%d/%Y")
+complaints$StatusDate <- as.Date(complaints$StatusDate, format = "%m/%d/%Y" )
+complaints$daysToResolve <- complaints$StatusDate - complaints$ReceivedDate
+
+```
+
+A jitterplot is a great take on a scatterplot when you know that multiple points will be showing up in the same spot.  By 'jittering' (moving the points a little bit randomly) you can get a better idea of where many points are showing up.  Making the points smaller and adding transparency have the same effect.
+```{r}
+
+ggplot(complaints, aes(x=Borough, y=daysToResolve)) +
+  geom_jitter(size = 0.5, alpha = 0.5) 
+
+```
+
+R also performs statistical operations (including ones more complex than these)
+```{r}
+
+mean(complaints$daysToResolve)
+median(complaints$daysToResolve)
+
+```
+
+Even though we used a jitterplot above, the vast majority of the complaints were resolved in less than 15 days -- a box plot shows this more accurately than a jitterplot.
+```{r}
+
+ggplot(complaints, aes(x = reorder(Borough, daysToResolve, FUN = median), y = daysToResolve)) +
+  geom_boxplot() +
+  coord_cartesian(ylim = c(0, 35))
+
+```
+
+In the code block below I load two more datasets and use the plyr package to join them.  Because it's an inner join, only rows with matching development name, borough, account name, location, and revenue month are included.
+```{r}
+
+# Loading in two new datasets
+electric <- read.csv("Electric_Consumption_And_Cost__2010_-__2016_.csv")
+water <- read.csv("Water_Consumption_And_Cost__2013_-_2016_.csv")
+
+# Renaming duplicate columns
+water$Water.Charges <- water$Current.Charges
+electric$Electric.Charges <- electric$Current.Charges
+
+# Selecting only some of the columns
+water <- subset(water, select = c(Development.Name, Borough, Account.Name, Location, Revenue.Month, Water.Charges, Consumption..HCF.))
+electric <- subset(electric, select = c(Development.Name, Borough, Account.Name, Location, Revenue.Month, Electric.Charges, Consumption..KW.))
+
+# Using an inner join to combine tables
+bills <- join(electric, water, by=c('Development.Name', 'Borough', 'Account.Name', 'Location', 'Revenue.Month'), type = 'inner')
+
+# Recasting the date and currency data
+bills$Revenue.Month <- as.Date(bills$Revenue.Month, format = "%m/%d/%Y")
+bills$Electric.Charges <- gsub("(\\$|,)","", bills$Electric.Charges)
+bills$Electric.Charges <- as.numeric(bills$Electric.Charges)
+bills$Water.Charges <- gsub("(\\$|,)","", bills$Water.Charges)
+bills$Water.Charges <- as.numeric(bills$Water.Charges)
+
+```
+
+Here I am interested in seeing the relationship between electric charges and water charges.  Adding a color to the jitter plot adds a 3rd variable -- the month.
+```{r}
+
+ggplot(bills, aes(x = Water.Charges, y = Electric.Charges)) +
+  geom_jitter(size = 0.5, alpha = 0.5, aes(color = Revenue.Month)) +
+  xlim(0, quantile(bills$Water.Charges, 0.9)) +
+  ylim(0, quantile(bills$Electric.Charges, 0.9)) 
+
+```
+
+There was too much information going on in the plot above, so I chose to use a facet-wrap to separate out the jitterplots month by month.
+```{r}
+
+ggplot(bills, aes(x = Water.Charges, y = Electric.Charges)) +
+  geom_jitter(size = 0.5, alpha = 0.5, aes(color = Revenue.Month)) +
+  xlim(0, quantile(bills$Water.Charges, 0.9)) +
+  ylim(0, quantile(bills$Electric.Charges, 0.9)) +
+  facet_wrap(~Revenue.Month)
+
+```
+
+Let it be known: Don't use colors when you don't need to! (The facet wrap and the colors above are redundant.) GET IT RIGHT IN BLACK AND WHITE!  Additionally, it was a bit of visual overload to look at it month by month, so I created a new column for year and facet-wraped by it instead.  This way we can see how the relationship between water and electric bills change month by month.
+```{r}
+
+bills$Year <- as.numeric(format(bills$Revenue.Month,'%Y'))
+ggplot(bills, aes(x = Water.Charges, y = Electric.Charges)) +
+  geom_jitter(size = 0.5, alpha = 0.5) +
+  xlim(0, quantile(bills$Water.Charges, 0.9)) +
+  ylim(0, quantile(bills$Electric.Charges, 0.9)) +
+  facet_wrap(~Year)
+
+```
+
+Just for kicks, this last graph shows how you can wrap (facet-wrap, that is) four variables into a plot.  Water charges on the x-axis, electric charges on the y-axis, revenue month in color, and borough through facets.
+```{r}
+
+ggplot(bills, aes(x = Water.Charges, y = Electric.Charges)) +
+  geom_jitter(size = 0.25, alpha = 0.75, aes(color = Revenue.Month)) +
+  xlim(0, quantile(bills$Water.Charges, 0.9)) +
+  ylim(0, quantile(bills$Electric.Charges, 0.9)) +
+  facet_wrap(~Borough)
+
+```
+
